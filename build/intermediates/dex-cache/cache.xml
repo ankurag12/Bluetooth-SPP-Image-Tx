@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<items version="2" >
+
+    <item
+        jar="C:\Users\Robo\AndroidStudioProjects\bt\bluetooth-spp-terminal\build\intermediates\exploded-aar\com.actionbarsherlock\actionbarsherlock\4.4.0\jars\classes.jar"
+        jumboMode="false"
+        revision="22.0.1"
+        sha1="af64527b748983a75de9c0756e9768b56b240a49">
+        <dex dex="C:\Users\Robo\AndroidStudioProjects\bt\bluetooth-spp-terminal\build\intermediates\pre-dexed\debug\classes-92b31b07335837fe1c83b2297f9753ae8d65e20b.jar" />
+    </item>
+    <item
+        jar="C:\Users\Robo\Repos\sticker_v1\bluetooth-spp-terminal\build\intermediates\exploded-aar\com.actionbarsherlock\actionbarsherlock\4.4.0\jars\classes.jar"
+        jumboMode="false"
+        revision="22.0.1"
+        sha1="af64527b748983a75de9c0756e9768b56b240a49">
+        <dex dex="C:\Users\Robo\Repos\sticker_v1\bluetooth-spp-terminal\build\intermediates\pre-dexed\debug\classes-88eb10e8b8af7c79a0a2789303ed1f45528e16ce.jar" />
+    </item>
+
+</items>
