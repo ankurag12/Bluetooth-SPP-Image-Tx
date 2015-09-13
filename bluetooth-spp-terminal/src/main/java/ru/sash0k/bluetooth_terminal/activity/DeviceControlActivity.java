@@ -27,8 +27,8 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.Serializable;
 import java.lang.ref.WeakReference;
-import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Date;
@@ -51,14 +51,26 @@ public final class DeviceControlActivity extends BaseActivity {
 
     private static byte fileData[];
 
-    private static int file_total_size = 0;
-    private static int file_bytes_start = 0;
-    private static int file_bytes_end = 0;
+    private static int fileTotalSize = 0;
+    private static int fileBytesStart = 0;
+    private static int fileBytesEnd = 0;
 
-    private static int comm_size_in_bytes = 200;
+    private static int commSizeInBytes = 250;
 
     private static String ack = "1";
 
+    private enum dataPacketType
+    {
+        CMD_PREP_FILE_TRANSFER,
+        DATA_FILE_CHUNK,
+        CMD_END_OF_FILE,
+        CMD_UNMOUNT_SDCARD,
+        CMD_DEFAULT
+
+    }
+
+    private static dataPacketType currentDataPacketType;
+    private static dataPacketType nextDataPacketType;
 
     private static DeviceConnector connector;
     private static BluetoothResponseHandler mHandler;
@@ -300,18 +312,17 @@ public final class DeviceControlActivity extends BaseActivity {
                 Utils.log("Requesting File from SDcard! status " + resultCode);
                 if (resultCode == Activity.RESULT_OK) {
                     Uri fileUri = data.getData();
-                    Utils.log("Video URI= " + fileUri);
 
                     //Get the binary file
                     File file = new File(fileUri.getPath());
 
-                    file_total_size = (int)file.length();
-                    file_bytes_start = 0;
+                    fileTotalSize = (int)file.length();
+                    fileBytesStart = 0;
 
-                    Utils.log("sdcard: " + fileUri + " total size: " + file_total_size);
+                    Utils.log("sdcard: " + fileUri + " total size: " + fileTotalSize);
 
                     //Read bytes from file
-                    fileData = new byte[file_total_size];
+                    fileData = new byte[fileTotalSize];
 
                     try {
                         InputStream in = new BufferedInputStream(new FileInputStream(file));
@@ -326,8 +337,9 @@ public final class DeviceControlActivity extends BaseActivity {
 
                     //Set the text
 //                    tv.setText(file_text);
-
-                    send_bt_cmd();
+                    currentDataPacketType = dataPacketType.CMD_PREP_FILE_TRANSFER;
+                    nextDataPacketType = dataPacketType.CMD_PREP_FILE_TRANSFER;
+                    sendBtDataPacket();
                 }
 
                 break;
@@ -406,26 +418,89 @@ public final class DeviceControlActivity extends BaseActivity {
     }
     // =========================================================================
 
-    public void send_bt_cmd() {
+    public void sendBtDataPacket() {
+        byte id;
+        short length;
+        byte [] payload;
+        byte trailer;
+        byte[] dataPacketBytes;
 
-        file_bytes_end = file_bytes_start +comm_size_in_bytes;
-        if(file_bytes_end > file_total_size)
-        {
-            file_bytes_end = file_total_size;
-            Utils.log("Sending last chunk of data");
+        switch(currentDataPacketType) {
+
+            case CMD_PREP_FILE_TRANSFER:
+                Utils.log("Prep for file transfer");
+                id = (byte) dataPacketType.CMD_PREP_FILE_TRANSFER.ordinal();
+                payload = new byte[]{0};
+                length = (short) payload.length;
+                trailer = '\n';
+                nextDataPacketType = dataPacketType.DATA_FILE_CHUNK;
+                break;
+
+            case DATA_FILE_CHUNK:
+                id = (byte) dataPacketType.DATA_FILE_CHUNK.ordinal();
+                nextDataPacketType = dataPacketType.DATA_FILE_CHUNK;
+
+                fileBytesEnd = fileBytesStart + commSizeInBytes;
+                if(fileBytesEnd >= fileTotalSize) {
+                    fileBytesEnd = fileTotalSize;
+                    Utils.log("Sending last chunk of data");
+                    nextDataPacketType = dataPacketType.CMD_END_OF_FILE;
+                }
+                Utils.log("Sending bytes: "+ fileBytesStart + " to bytes "+ fileBytesEnd);
+                payload = Arrays.copyOfRange(fileData, fileBytesStart, fileBytesEnd);
+                length = (short) payload.length;
+                trailer = '\n';
+                fileBytesStart = fileBytesEnd;
+                break;
+
+            case CMD_END_OF_FILE:
+                Utils.log("End of File");
+                id = (byte) dataPacketType.CMD_END_OF_FILE.ordinal();
+                payload = new byte[]{0};
+                length = (short) payload.length;
+                trailer = '\n';
+                nextDataPacketType = dataPacketType.CMD_DEFAULT;
+                break;
+
+            case CMD_UNMOUNT_SDCARD:
+                id = (byte) dataPacketType.CMD_UNMOUNT_SDCARD.ordinal();
+                payload = new byte[]{0};
+                length = (short) payload.length;
+                trailer = '\n';
+                break;
+
+            default:
+                id = -1;
+                payload = new byte[]{0};
+                length = (short) payload.length;
+                trailer = '\n';
         }
 
-        Utils.log("Sending bytes: "+file_bytes_start + " to bytes "+file_bytes_end);
+        DataPacket dataPacket = new DataPacket(id, length, payload, trailer );
 
-        byte [] dataChunk = Arrays.copyOfRange(fileData, file_bytes_start, file_bytes_end);
-
+        dataPacketBytes = dataPacket.dataPacketToByteArray(dataPacket);
+        Utils.log("Length of dataPacketBytes: " + dataPacketBytes.length);
         if (isConnected()) {
-            connector.write(dataChunk);
-            String logStr = new String(fileData, StandardCharsets.UTF_8);
-            appendLog(logStr, hexMode, true, needClean);
+            connector.write(dataPacketBytes);
+            //String logStr = new String(dataPacketBytes, StandardCharsets.UTF_8);
+            //appendLog(logStr, hexMode, true, needClean);
         }
 
-        file_bytes_start = file_bytes_end;
+/*        try {
+            //dataPacketBytes = serialize(dataPacket);
+            dataPacketBytes = dataPacket.dataPacketToByteArray(dataPacket);
+            Utils.log("Length of dataPacketBytes: " + dataPacketBytes.length);
+            if (isConnected()) {
+                connector.write(dataPacketBytes);
+                String logStr = new String(dataPacketBytes, StandardCharsets.UTF_8);
+                appendLog(logStr, hexMode, true, needClean);
+            }
+        } catch (IOException e) {
+            Utils.log("IO Exception in serialize");
+            e.printStackTrace();
+        }*/
+
+
     }
 
 
@@ -479,8 +554,14 @@ public final class DeviceControlActivity extends BaseActivity {
 
                         if(readMessage.contains(ack)) {
                             Utils.log("ack rx: ");
-                            activity.send_bt_cmd();
+                            currentDataPacketType = nextDataPacketType;
+                            activity.sendBtDataPacket();
                         }
+                        else {
+                            Utils.log("Invalid ACK, Resending Data Packet ");
+                            activity.sendBtDataPacket();
+                        }
+
 
                         if (readMessage != null) {
                             activity.appendLog(readMessage, false, false, activity.needClean);
@@ -503,4 +584,44 @@ public final class DeviceControlActivity extends BaseActivity {
         }
     }
     // ==========================================================================
+
+    private static class DataPacket implements Serializable {
+
+        private byte dataPacketID;
+        private short dataPacketLength;
+        private byte[] dataPacketPayload;
+        private byte dataPacketTrailer;
+
+
+        public DataPacket(byte id, short length, byte[] payload, byte trailer) {
+            dataPacketID = id;
+            dataPacketLength = length;
+            dataPacketPayload = payload;
+            dataPacketTrailer = trailer;
+        }
+
+        // TODO: Not a good code design with all the hard coding but Serialization doesn't work as in C
+        // Need to come up with a better way
+        public byte[] dataPacketToByteArray(DataPacket dataPacket) {
+            byte[] dataPacketBytes = new byte[dataPacket.dataPacketPayload.length+4];
+            dataPacketBytes[0] = dataPacket.dataPacketID;
+            dataPacketBytes[1] = (byte) (dataPacket.dataPacketLength>>8*0 & 0xFF);
+            dataPacketBytes[2] = (byte) (dataPacket.dataPacketLength>>8*1 & 0xFF);
+            System.arraycopy(dataPacket.dataPacketPayload,0,dataPacketBytes,3,dataPacket.dataPacketPayload.length);
+            dataPacketBytes[dataPacketBytes.length-1] = dataPacket.dataPacketTrailer;
+            return dataPacketBytes;
+        }
+
+    }
+
+//    private static byte[] serialize(Object obj) throws IOException {
+//        ByteArrayOutputStream out = new ByteArrayOutputStream();
+//        ObjectOutputStream os = new ObjectOutputStream(out);
+//        os.writeObject(obj);
+//        os.flush();
+//        Utils.log("byte array: " + out.toString());
+//        return out.toByteArray();
+//    }
+
+
 }
