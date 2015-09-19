@@ -55,7 +55,7 @@ public final class DeviceControlActivity extends BaseActivity {
     private static int fileBytesStart = 0;
     private static int fileBytesEnd = 0;
 
-    private static int commSizeInBytes = 250;
+    private static int maxPayloadSizeBytes = 786;   // Must be a multiple of 2
 
     private static String ack = "1";
 
@@ -65,8 +65,15 @@ public final class DeviceControlActivity extends BaseActivity {
         DATA_FILE_CHUNK,
         CMD_END_OF_FILE,
         CMD_UNMOUNT_SDCARD,
+        CMD_DISPLAY_IMAGE,
         CMD_DEFAULT
 
+    }
+
+    private enum dataPacketCompression
+    {
+        NO_COMPRESSION,
+        TWO_BYTES_TO_ONE_COMPRESSION
     }
 
     private static dataPacketType currentDataPacketType;
@@ -420,7 +427,9 @@ public final class DeviceControlActivity extends BaseActivity {
 
     public void sendBtDataPacket() {
         byte id;
+        byte comp;
         short length;
+        byte [] payload_tmp;
         byte [] payload;
         byte trailer;
         byte[] dataPacketBytes;
@@ -430,6 +439,7 @@ public final class DeviceControlActivity extends BaseActivity {
             case CMD_PREP_FILE_TRANSFER:
                 Utils.log("Prep for file transfer");
                 id = (byte) dataPacketType.CMD_PREP_FILE_TRANSFER.ordinal();
+                comp = (byte) dataPacketCompression.NO_COMPRESSION.ordinal();
                 payload = new byte[]{0};
                 length = (short) payload.length;
                 trailer = '\n';
@@ -438,16 +448,28 @@ public final class DeviceControlActivity extends BaseActivity {
 
             case DATA_FILE_CHUNK:
                 id = (byte) dataPacketType.DATA_FILE_CHUNK.ordinal();
+                comp = (byte) dataPacketCompression.TWO_BYTES_TO_ONE_COMPRESSION.ordinal();
                 nextDataPacketType = dataPacketType.DATA_FILE_CHUNK;
+                fileBytesEnd = fileBytesStart + maxPayloadSizeBytes*2;
 
-                fileBytesEnd = fileBytesStart + commSizeInBytes;
                 if(fileBytesEnd >= fileTotalSize) {
                     fileBytesEnd = fileTotalSize;
                     Utils.log("Sending last chunk of data");
                     nextDataPacketType = dataPacketType.CMD_END_OF_FILE;
                 }
+                payload_tmp = Arrays.copyOfRange(fileData, fileBytesStart, fileBytesEnd);
+                payload=new byte[payload_tmp.length/2];
+                for(int i=0;i<payload.length;i++) {
+                    payload[i] = (byte)((payload_tmp[2*i] & 0xF0)|(payload_tmp[2*i+1]>>4));
+                }
+
+                if(fileBytesStart==0) {             // For PGM metadata
+                    //payload = null;
+                    comp = (byte) dataPacketCompression.NO_COMPRESSION.ordinal();
+                    fileBytesEnd = fileBytesStart + maxPayloadSizeBytes;
+                    payload = Arrays.copyOfRange(fileData, fileBytesStart, fileBytesEnd);
+                }
                 Utils.log("Sending bytes: "+ fileBytesStart + " to bytes "+ fileBytesEnd);
-                payload = Arrays.copyOfRange(fileData, fileBytesStart, fileBytesEnd);
                 length = (short) payload.length;
                 trailer = '\n';
                 fileBytesStart = fileBytesEnd;
@@ -456,27 +478,40 @@ public final class DeviceControlActivity extends BaseActivity {
             case CMD_END_OF_FILE:
                 Utils.log("End of File");
                 id = (byte) dataPacketType.CMD_END_OF_FILE.ordinal();
+                comp = (byte) dataPacketCompression.NO_COMPRESSION.ordinal();
+                payload = new byte[]{0};
+                length = (short) payload.length;
+                trailer = '\n';
+                nextDataPacketType = dataPacketType.CMD_DISPLAY_IMAGE;
+                break;
+
+            case CMD_UNMOUNT_SDCARD:
+                id = (byte) dataPacketType.CMD_UNMOUNT_SDCARD.ordinal();
+                comp = (byte) dataPacketCompression.NO_COMPRESSION.ordinal();
                 payload = new byte[]{0};
                 length = (short) payload.length;
                 trailer = '\n';
                 nextDataPacketType = dataPacketType.CMD_DEFAULT;
                 break;
 
-            case CMD_UNMOUNT_SDCARD:
-                id = (byte) dataPacketType.CMD_UNMOUNT_SDCARD.ordinal();
+            case CMD_DISPLAY_IMAGE:
+                id = (byte) dataPacketType.CMD_DISPLAY_IMAGE.ordinal();
+                comp = (byte) dataPacketCompression.NO_COMPRESSION.ordinal();
                 payload = new byte[]{0};
                 length = (short) payload.length;
                 trailer = '\n';
+                nextDataPacketType = dataPacketType.CMD_DEFAULT;
                 break;
 
             default:
                 id = -1;
+                comp = (byte) dataPacketCompression.NO_COMPRESSION.ordinal();
                 payload = new byte[]{0};
                 length = (short) payload.length;
                 trailer = '\n';
         }
 
-        DataPacket dataPacket = new DataPacket(id, length, payload, trailer );
+        DataPacket dataPacket = new DataPacket(id, comp, length, payload, trailer );
 
         dataPacketBytes = dataPacket.dataPacketToByteArray(dataPacket);
         Utils.log("Length of dataPacketBytes: " + dataPacketBytes.length);
@@ -550,7 +585,7 @@ public final class DeviceControlActivity extends BaseActivity {
                     case MESSAGE_READ:
 
                         final String readMessage = (String) msg.obj;
-                        Utils.log("incoming msg: " + readMessage);
+                        //Utils.log("incoming msg: " + readMessage);
 
                         if(readMessage.contains(ack)) {
                             Utils.log("ack rx: ");
@@ -558,13 +593,13 @@ public final class DeviceControlActivity extends BaseActivity {
                             activity.sendBtDataPacket();
                         }
                         else {
-                            Utils.log("Invalid ACK, Resending Data Packet ");
-                            activity.sendBtDataPacket();
+                            Utils.log("Invalid ACK, must resend Data Packet ");
+                            //activity.sendBtDataPacket();
                         }
 
 
                         if (readMessage != null) {
-                            activity.appendLog(readMessage, false, false, activity.needClean);
+                            //activity.appendLog(readMessage, false, false, activity.needClean);
                         }
                         break;
 
@@ -588,13 +623,15 @@ public final class DeviceControlActivity extends BaseActivity {
     private static class DataPacket implements Serializable {
 
         private byte dataPacketID;
+        private byte dataPacketComp;
         private short dataPacketLength;
         private byte[] dataPacketPayload;
         private byte dataPacketTrailer;
 
 
-        public DataPacket(byte id, short length, byte[] payload, byte trailer) {
+        public DataPacket(byte id, byte comp, short length, byte[] payload, byte trailer) {
             dataPacketID = id;
+            dataPacketComp = comp;
             dataPacketLength = length;
             dataPacketPayload = payload;
             dataPacketTrailer = trailer;
@@ -603,11 +640,12 @@ public final class DeviceControlActivity extends BaseActivity {
         // TODO: Not a good code design with all the hard coding but Serialization doesn't work as in C
         // Need to come up with a better way
         public byte[] dataPacketToByteArray(DataPacket dataPacket) {
-            byte[] dataPacketBytes = new byte[dataPacket.dataPacketPayload.length+4];
+            byte[] dataPacketBytes = new byte[dataPacket.dataPacketPayload.length+5];
             dataPacketBytes[0] = dataPacket.dataPacketID;
-            dataPacketBytes[1] = (byte) (dataPacket.dataPacketLength>>8*0 & 0xFF);
-            dataPacketBytes[2] = (byte) (dataPacket.dataPacketLength>>8*1 & 0xFF);
-            System.arraycopy(dataPacket.dataPacketPayload,0,dataPacketBytes,3,dataPacket.dataPacketPayload.length);
+            dataPacketBytes[1] = dataPacket.dataPacketComp;
+            dataPacketBytes[2] = (byte) (dataPacket.dataPacketLength>>8*0 & 0xFF);
+            dataPacketBytes[3] = (byte) (dataPacket.dataPacketLength>>8*1 & 0xFF);
+            System.arraycopy(dataPacket.dataPacketPayload,0,dataPacketBytes,4,dataPacket.dataPacketPayload.length);
             dataPacketBytes[dataPacketBytes.length-1] = dataPacket.dataPacketTrailer;
             return dataPacketBytes;
         }
