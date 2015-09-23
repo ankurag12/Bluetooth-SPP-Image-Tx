@@ -51,6 +51,8 @@ public final class DeviceControlActivity extends BaseActivity {
 
     private static byte fileData[];
 
+    private static String fileNameExt;
+
     private static int fileTotalSize = 0;
     private static int fileBytesStart = 0;
     private static int fileBytesEnd = 0;
@@ -62,6 +64,7 @@ public final class DeviceControlActivity extends BaseActivity {
     private enum dataPacketType
     {
         CMD_PREP_FILE_TRANSFER,
+        PNM_FILE_HEADER,
         DATA_FILE_CHUNK,
         CMD_END_OF_FILE,
         CMD_UNMOUNT_SDCARD,
@@ -74,6 +77,12 @@ public final class DeviceControlActivity extends BaseActivity {
     {
         NO_COMPRESSION,
         TWO_BYTES_TO_ONE_COMPRESSION
+    }
+
+    private enum pnmType
+    {
+        PNM_BITMAP,
+        PNM_GREYSCALE
     }
 
     private static dataPacketType currentDataPacketType;
@@ -323,6 +332,10 @@ public final class DeviceControlActivity extends BaseActivity {
                     //Get the binary file
                     File file = new File(fileUri.getPath());
 
+                    int i = fileUri.toString().lastIndexOf('.');
+                    if(i>=0)
+                        fileNameExt = fileUri.toString().substring(i + 1);
+
                     fileTotalSize = (int)file.length();
                     fileBytesStart = 0;
 
@@ -425,6 +438,67 @@ public final class DeviceControlActivity extends BaseActivity {
     }
     // =========================================================================
 
+    public PNMheaderParams pnmReadHeader(int paramCnt) {
+        char ch;
+        int digits = 0;
+        boolean found = false;
+        boolean inComment = false;
+        int bytePtr=2;
+        int val=0;
+        int[] pnmParams = new int[paramCnt];
+
+        for (int j=0; j<paramCnt; j++) {
+            while (!found) {
+                ch = (char) fileData[bytePtr++];
+                if (bytePtr > maxPayloadSizeBytes) {
+                    Utils.log("File header size must be less than " + maxPayloadSizeBytes + " bytes in current implementation");
+                    break;
+                }
+                switch (ch) {
+                    case '#':
+                        inComment = true;
+                        break;
+                    case ' ':
+                    case '\t':
+                    case '\r':
+                    case '\n':
+                        if (!inComment && digits > 0)
+                            found = true;
+                        if (ch == '\r' || ch == '\n')
+                            inComment = false;
+                        break;
+                    case '0':
+                    case '1':
+                    case '2':
+                    case '3':
+                    case '4':
+                    case '5':
+                    case '6':
+                    case '7':
+                    case '8':
+                    case '9':
+                        if (!inComment) {
+                            val = val * 10 + (ch - '0');
+                        }
+                        digits++;
+                        break;
+                    default:
+                        break;
+                }
+            }
+            pnmParams[j] = val;
+            found=false;
+            inComment = false;
+            digits= 0;
+            val=0;
+        }
+        Utils.log(pnmParams[0] + " " + pnmParams[1] + " " + pnmParams[2] + " " + bytePtr);
+        return new PNMheaderParams(pnmParams[0],pnmParams[1], pnmParams[2],bytePtr);
+
+    }
+
+    // =========================================================================
+
     public void sendBtDataPacket() {
         byte id;
         byte comp;
@@ -443,7 +517,24 @@ public final class DeviceControlActivity extends BaseActivity {
                 payload = new byte[]{0};
                 length = (short) payload.length;
                 trailer = '\n';
+                if(fileNameExt.toUpperCase().equals("PGM") || fileNameExt.toUpperCase().equals("PBM"))
+                    nextDataPacketType = dataPacketType.PNM_FILE_HEADER;
+                else
+                    nextDataPacketType = dataPacketType.DATA_FILE_CHUNK;
+                break;
+
+            case PNM_FILE_HEADER:
+                id = (byte) dataPacketType.PNM_FILE_HEADER.ordinal();
+                comp = (byte) dataPacketCompression.NO_COMPRESSION.ordinal();
+                if(!(fileData[0]=='P' && (fileData[1] == '4' || fileData[1] == '5')))
+                    Utils.log("PNM file format error");
+                int numParams = 3;
+                fileBytesEnd = fileBytesStart + pnmReadHeader(numParams).getHeaderSize();
+                payload = Arrays.copyOfRange(fileData, fileBytesStart, fileBytesEnd);
+                length = (short) payload.length;
+                trailer = '\n';
                 nextDataPacketType = dataPacketType.DATA_FILE_CHUNK;
+                fileBytesStart = fileBytesEnd;
                 break;
 
             case DATA_FILE_CHUNK:
@@ -463,12 +554,6 @@ public final class DeviceControlActivity extends BaseActivity {
                     payload[i] = (byte)((payload_tmp[2*i] & 0xF0)|(payload_tmp[2*i+1]>>4));
                 }
 
-                if(fileBytesStart==0) {             // For PGM metadata
-                    //payload = null;
-                    comp = (byte) dataPacketCompression.NO_COMPRESSION.ordinal();
-                    fileBytesEnd = fileBytesStart + maxPayloadSizeBytes;
-                    payload = Arrays.copyOfRange(fileData, fileBytesStart, fileBytesEnd);
-                }
                 Utils.log("Sending bytes: "+ fileBytesStart + " to bytes "+ fileBytesEnd);
                 length = (short) payload.length;
                 trailer = '\n';
@@ -482,7 +567,7 @@ public final class DeviceControlActivity extends BaseActivity {
                 payload = new byte[]{0};
                 length = (short) payload.length;
                 trailer = '\n';
-                nextDataPacketType = dataPacketType.CMD_DISPLAY_IMAGE;
+                nextDataPacketType = dataPacketType.CMD_DEFAULT;
                 break;
 
             case CMD_UNMOUNT_SDCARD:
@@ -661,5 +746,21 @@ public final class DeviceControlActivity extends BaseActivity {
 //        return out.toByteArray();
 //    }
 
+    private static class PNMheaderParams{
+        private int imgWidth;
+        private int imgHeight;
+        private int maxColorScale;
+        private int headerSizeBytes;
 
+        public PNMheaderParams(int width, int height, int colorScale, int size) {
+            imgWidth = width;
+            imgHeight = height;
+            maxColorScale = colorScale;
+            headerSizeBytes = size;
+        }
+
+        public int getHeaderSize(){
+            return headerSizeBytes;
+        }
+    }
 }
