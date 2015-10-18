@@ -541,18 +541,20 @@ public final class DeviceControlActivity extends BaseActivity {
                 id = (byte) dataPacketType.DATA_FILE_CHUNK.ordinal();
                 comp = (byte) dataPacketCompression.TWO_BYTES_TO_ONE_COMPRESSION.ordinal();
                 nextDataPacketType = dataPacketType.DATA_FILE_CHUNK;
-                fileBytesEnd = fileBytesStart + maxPayloadSizeBytes*2;
+                //fileBytesEnd = fileBytesStart + maxPayloadSizeBytes*2;
+                fileBytesEnd = fileBytesStart + maxPayloadSizeBytes;
 
                 if(fileBytesEnd >= fileTotalSize) {
                     fileBytesEnd = fileTotalSize;
                     Utils.log("Sending last chunk of data");
                     nextDataPacketType = dataPacketType.CMD_END_OF_FILE;
                 }
-                payload_tmp = Arrays.copyOfRange(fileData, fileBytesStart, fileBytesEnd);
-                payload=new byte[payload_tmp.length/2];
-                for(int i=0;i<payload.length;i++) {
-                    payload[i] = (byte)((payload_tmp[2*i] & 0xF0)|(payload_tmp[2*i+1]>>4));
-                }
+                payload = Arrays.copyOfRange(fileData, fileBytesStart, fileBytesEnd);
+               // payload_tmp = Arrays.copyOfRange(fileData, fileBytesStart, fileBytesEnd);
+               // payload=new byte[payload_tmp.length/2];
+               // for(int i=0;i<payload.length;i++) {
+               //     payload[i] = (byte)((payload_tmp[2*i] & 0xF0)|(payload_tmp[2*i+1]>>4));
+               // }
 
                 Utils.log("Sending bytes: "+ fileBytesStart + " to bytes "+ fileBytesEnd);
                 length = (short) payload.length;
