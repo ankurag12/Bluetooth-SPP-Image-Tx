@@ -29,6 +29,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.Serializable;
 import java.lang.ref.WeakReference;
+import java.lang.reflect.Field;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Date;
@@ -83,6 +84,25 @@ public final class DeviceControlActivity extends BaseActivity {
     {
         PNM_BITMAP,
         PNM_GREYSCALE
+    }
+
+    private enum fileIDs {
+        ECODE_FILE_ID (1),
+        VCOM_FILE_ID (2),
+        WAVEFORM_FILE_ID (3),
+        HWINFO_FILE_ID (4),
+        REG_OVERRIDE_FILE_ID (5),
+        RECEIVED_IMG_FILE_ID (6);
+
+        private int value;
+
+        private fileIDs(int value) {
+            this.value = value;
+        }
+
+        public int getValue() {
+            return value;
+        }
     }
 
     private static dataPacketType currentDataPacketType;
@@ -514,8 +534,10 @@ public final class DeviceControlActivity extends BaseActivity {
                 Utils.log("Prep for file transfer");
                 id = (byte) dataPacketType.CMD_PREP_FILE_TRANSFER.ordinal();
                 comp = (byte) dataPacketCompression.NO_COMPRESSION.ordinal();
-                payload = new byte[]{0};
+                DisplayCoordinates displayCoordinates = new DisplayCoordinates(200,200,1280-400,960-400,200,200);       // These values have to come from numeric input/PGM header/cropping tool
+                payload = displayCoordinates.dispCoordToByteArray(displayCoordinates);
                 length = (short) payload.length;
+                Utils.log(" payload length = " + length);
                 trailer = '\n';
                 if(fileNameExt.toUpperCase().equals("PGM") || fileNameExt.toUpperCase().equals("PBM"))
                     nextDataPacketType = dataPacketType.PNM_FILE_HEADER;
@@ -564,10 +586,10 @@ public final class DeviceControlActivity extends BaseActivity {
                 Utils.log("End of File");
                 id = (byte) dataPacketType.CMD_END_OF_FILE.ordinal();
                 comp = (byte) dataPacketCompression.NO_COMPRESSION.ordinal();
-                payload = new byte[]{0};
+                payload = new byte[]{};
                 length = (short) payload.length;
                 trailer = '\n';
-                nextDataPacketType = dataPacketType.CMD_DEFAULT;
+                nextDataPacketType = dataPacketType.CMD_DISPLAY_IMAGE;
                 break;
 
             case CMD_UNMOUNT_SDCARD:
@@ -582,7 +604,7 @@ public final class DeviceControlActivity extends BaseActivity {
             case CMD_DISPLAY_IMAGE:
                 id = (byte) dataPacketType.CMD_DISPLAY_IMAGE.ordinal();
                 comp = (byte) dataPacketCompression.NO_COMPRESSION.ordinal();
-                payload = new byte[]{0};
+                payload = new byte[]{(byte)fileIDs.RECEIVED_IMG_FILE_ID.getValue()};
                 length = (short) payload.length;
                 trailer = '\n';
                 nextDataPacketType = dataPacketType.CMD_DEFAULT;
@@ -591,7 +613,7 @@ public final class DeviceControlActivity extends BaseActivity {
             default:
                 id = -1;
                 comp = (byte) dataPacketCompression.NO_COMPRESSION.ordinal();
-                payload = new byte[]{0};
+                payload = new byte[]{6};
                 length = (short) payload.length;
                 trailer = '\n';
         }
@@ -762,5 +784,46 @@ public final class DeviceControlActivity extends BaseActivity {
         public int getHeaderSize(){
             return headerSizeBytes;
         }
+    }
+
+    private static class DisplayCoordinates {
+        private int leftOut;
+        private int topOut;
+        private int widthOut;
+        private int heightOut;
+        private int leftIn;
+        private int topIn;
+
+        private int getFieldIndex(String string){
+            String fields[] = new String[]{"leftOut", "topOut", "widthOut", "heightOut", "leftIn", "topIn"};    // This sequence should match what is expected at the receiving end
+            return Arrays.asList(fields).indexOf(string);
+        }
+
+        public DisplayCoordinates(int areaLeft, int areaTop, int areaWidth, int areaHeight, int imgLeft, int imgTop) {
+            leftOut = areaLeft;
+            topOut = areaTop;
+            widthOut = areaWidth;
+            heightOut = areaHeight;
+            leftIn = imgLeft;
+            topIn = imgTop;
+        }
+
+        public byte[] dispCoordToByteArray(DisplayCoordinates displayCoordinates) {
+            Field field[] = this.getClass().getDeclaredFields();        // getDeclaredFields() returns fields in any order
+            byte[] dispCoordBytes = new byte[field.length * 2];
+            try {
+                for (int i = 0; i < field.length; i++) {
+                    //Utils.log(""+getFieldIndex(field[i/2].getName()));
+                    dispCoordBytes[2*getFieldIndex(field[i].getName())] = (byte) (field[i].getInt(displayCoordinates) >> 8 * 0 & 0xFF);
+                    dispCoordBytes[2*getFieldIndex(field[i].getName()) + 1] = (byte) (field[i].getInt(displayCoordinates) >> 8 * 1 & 0xFF);
+                }
+            } catch (IllegalAccessException e) {
+                Utils.log("IllegalAccessException in DisplayCoordinates");
+                e.printStackTrace();
+            }
+
+            return dispCoordBytes;
+        }
+
     }
 }
