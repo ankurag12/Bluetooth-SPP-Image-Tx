@@ -58,9 +58,13 @@ public final class DeviceControlActivity extends BaseActivity {
     private static int fileBytesStart = 0;
     private static int fileBytesEnd = 0;
 
-    private static int maxPayloadSizeBytes = 786;   // Must be a multiple of 2
+    private static int maxDataPacketSizeBytes = 329;    // This is a hard constant. 329
+    private static int maxPayloadSizeBytes = maxDataPacketSizeBytes - 5;   // This is a hard constant. 329-5=324
+    private static int maxNumDataPacketsInBatch = 1000;    // Number of data packets in one "batch" of write operation
 
     private static String ack = "1";
+
+    private static int cntr=0;
 
     private enum dataPacketType
     {
@@ -96,7 +100,7 @@ public final class DeviceControlActivity extends BaseActivity {
 
         private int value;
 
-        private fileIDs(int value) {
+        fileIDs(int value) {
             this.value = value;
         }
 
@@ -379,7 +383,8 @@ public final class DeviceControlActivity extends BaseActivity {
 //                    tv.setText(file_text);
                     currentDataPacketType = dataPacketType.CMD_PREP_FILE_TRANSFER;
                     nextDataPacketType = dataPacketType.CMD_PREP_FILE_TRANSFER;
-                    sendBtDataPacket();
+                    // sendBtDataPacket();
+                    sendFile();
                 }
 
                 break;
@@ -406,15 +411,11 @@ public final class DeviceControlActivity extends BaseActivity {
     // ==========================================================================
 
 
-    /**
-     * Отправка команды устройству
-     */
     public void sendCommand(View view) {
         if (commandEditText != null) {
             String commandString = commandEditText.getText().toString();
             if (commandString.isEmpty()) return;
 
-            // Дополнение команд в hex
             if (hexMode && (commandString.length() % 2 == 1)) {
                 commandString = "0" + commandString;
                 commandEditText.setText(commandString);
@@ -519,7 +520,7 @@ public final class DeviceControlActivity extends BaseActivity {
 
     // =========================================================================
 
-    public void sendBtDataPacket() {
+    public byte[] createDataPacket() {
         byte id;
         byte comp;
         short length;
@@ -528,13 +529,14 @@ public final class DeviceControlActivity extends BaseActivity {
         byte trailer;
         byte[] dataPacketBytes;
 
+
         switch(currentDataPacketType) {
 
             case CMD_PREP_FILE_TRANSFER:
                 Utils.log("Prep for file transfer");
                 id = (byte) dataPacketType.CMD_PREP_FILE_TRANSFER.ordinal();
                 comp = (byte) dataPacketCompression.NO_COMPRESSION.ordinal();
-                DisplayCoordinates displayCoordinates = new DisplayCoordinates(200,200,1280-400,960-400,200,200);       // These values have to come from numeric input/PGM header/cropping tool
+                DisplayCoordinates displayCoordinates = new DisplayCoordinates(0,0,1280,960,0,0);       // These values have to come from numeric input/PGM header/cropping tool
                 payload = displayCoordinates.dispCoordToByteArray(displayCoordinates);
                 length = (short) payload.length;
                 Utils.log(" payload length = " + length);
@@ -578,7 +580,7 @@ public final class DeviceControlActivity extends BaseActivity {
 
                 Utils.log("Sending bytes: "+ fileBytesStart + " to bytes "+ fileBytesEnd);
                 length = (short) payload.length;
-                trailer = '\n';
+                trailer = (byte)cntr++;         // For debugging
                 fileBytesStart = fileBytesEnd;
                 break;
 
@@ -586,7 +588,7 @@ public final class DeviceControlActivity extends BaseActivity {
                 Utils.log("End of File");
                 id = (byte) dataPacketType.CMD_END_OF_FILE.ordinal();
                 comp = (byte) dataPacketCompression.NO_COMPRESSION.ordinal();
-                payload = new byte[]{};
+                payload = new byte[]{0};
                 length = (short) payload.length;
                 trailer = '\n';
                 nextDataPacketType = dataPacketType.CMD_DISPLAY_IMAGE;
@@ -621,12 +623,8 @@ public final class DeviceControlActivity extends BaseActivity {
         DataPacket dataPacket = new DataPacket(id, comp, length, payload, trailer );
 
         dataPacketBytes = dataPacket.dataPacketToByteArray(dataPacket);
-        Utils.log("Length of dataPacketBytes: " + dataPacketBytes.length);
-        if (isConnected()) {
-            connector.write(dataPacketBytes);
-            //String logStr = new String(dataPacketBytes, StandardCharsets.UTF_8);
-            //appendLog(logStr, hexMode, true, needClean);
-        }
+        return dataPacketBytes;
+
 
 /*        try {
             //dataPacketBytes = serialize(dataPacket);
@@ -645,6 +643,32 @@ public final class DeviceControlActivity extends BaseActivity {
 
     }
 
+    public void sendBtDataPacketsBatch() {
+        int count = 0;
+        byte[] dataPacketsBatch_tmp = new byte[maxNumDataPacketsInBatch*maxDataPacketSizeBytes];
+        int batchSize = 0;
+        do {
+            byte[] dataPacketBytes = createDataPacket();
+            System.arraycopy(dataPacketBytes, 0, dataPacketsBatch_tmp, batchSize, dataPacketBytes.length);
+            batchSize += dataPacketBytes.length;
+            count++;
+        } while(nextDataPacketType==currentDataPacketType && count<maxNumDataPacketsInBatch);
+
+        currentDataPacketType = nextDataPacketType;
+        byte[] dataPacketsBatch = new byte[batchSize];
+        System.arraycopy(dataPacketsBatch_tmp, 0, dataPacketsBatch, 0, batchSize);
+        Utils.log("Length of dataPacketBytes: " + dataPacketsBatch.length);
+        if (isConnected()) {
+            connector.write(dataPacketsBatch);
+        }
+    }
+
+    public void sendFile() {
+        cntr=0;                 // For debugging, cntr can be used to tag each data packet as its trailer
+        do {
+            sendBtDataPacketsBatch();
+        } while(nextDataPacketType!=dataPacketType.CMD_DEFAULT);
+    }
 
     void setDeviceName(String deviceName) {
         this.deviceName = deviceName;
@@ -696,8 +720,6 @@ public final class DeviceControlActivity extends BaseActivity {
 
                         if(readMessage.contains(ack)) {
                             Utils.log("ack rx: ");
-                            currentDataPacketType = nextDataPacketType;
-                            activity.sendBtDataPacket();
                         }
                         else {
                             Utils.log("Invalid ACK, must resend Data Packet ");
@@ -813,7 +835,6 @@ public final class DeviceControlActivity extends BaseActivity {
             byte[] dispCoordBytes = new byte[field.length * 2];
             try {
                 for (int i = 0; i < field.length; i++) {
-                    //Utils.log(""+getFieldIndex(field[i/2].getName()));
                     dispCoordBytes[2*getFieldIndex(field[i].getName())] = (byte) (field[i].getInt(displayCoordinates) >> 8 * 0 & 0xFF);
                     dispCoordBytes[2*getFieldIndex(field[i].getName()) + 1] = (byte) (field[i].getInt(displayCoordinates) >> 8 * 1 & 0xFF);
                 }
