@@ -10,6 +10,7 @@ import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.ColorMatrix;
 import android.graphics.ColorMatrixColorFilter;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.net.Uri;
 import android.os.Bundle;
@@ -24,6 +25,7 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import com.actionbarsherlock.app.ActionBar;
@@ -369,7 +371,14 @@ public final class DeviceControlActivity extends BaseActivity {
 
                     try {
                         Bitmap bitmapFile = decodeSampledBitmapFromFile(getBaseContext(),fileUri,displayWidth, displayHeight);
+
+                        ImageView image = (ImageView) findViewById(R.id.imageView);
+
                         bitmapFile = toGrayscale(bitmapFile);
+                        bitmapFile = getResizedBitmap(bitmapFile, 640, 640);
+
+                        image.setImageBitmap(bitmapFile);
+
                         imageWidth = bitmapFile.getWidth();
                         imageHeight = bitmapFile.getHeight();
 
@@ -493,6 +502,24 @@ public final class DeviceControlActivity extends BaseActivity {
         c.drawBitmap(bmpOriginal, 0, 0, paint);
         return bmpGrayscale;
     }
+
+    public Bitmap getResizedBitmap(Bitmap bm, int newWidth, int newHeight) {
+        int width = bm.getWidth();
+        int height = bm.getHeight();
+        float scaleWidth = ((float) newWidth) / width;
+        float scaleHeight = ((float) newHeight) / height;
+        // CREATE A MATRIX FOR THE MANIPULATION
+        Matrix matrix = new Matrix();
+        // RESIZE THE BIT MAP
+        matrix.postScale(scaleWidth, scaleHeight);
+
+        // "RECREATE" THE NEW BITMAP
+        Bitmap resizedBitmap = Bitmap.createBitmap(
+                bm, 0, 0, width, height, matrix, false);
+        bm.recycle();
+        return resizedBitmap;
+    }
+
     // ==========================================================================
 
 

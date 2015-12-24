@@ -33,12 +33,18 @@
     <TextView
         android:id="@+id/log_textview"
         android:layout_width="match_parent"
-        android:layout_height="281dp"
+        android:layout_height="87dp"
         android:clickable="false"
         android:enabled="true"
         android:scrollbars="vertical"
         android:textColor="@android:color/white"
         android:textStyle="bold" />
+
+    <ImageView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:id="@+id/imageView"
+        android:layout_gravity="center_horizontal" />
 
     <Button
         android:layout_width="wrap_content"
