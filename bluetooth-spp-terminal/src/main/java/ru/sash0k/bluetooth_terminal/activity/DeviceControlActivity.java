@@ -31,9 +31,7 @@ import com.actionbarsherlock.view.Menu;
 import com.actionbarsherlock.view.MenuItem;
 
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.Serializable;
 import java.lang.ref.WeakReference;
@@ -52,6 +50,11 @@ import ru.sash0k.bluetooth_terminal.bluetooth.DeviceListActivity;
 public final class DeviceControlActivity extends BaseActivity {
     private static final String DEVICE_NAME = "DEVICE_NAME";
     private static final String LOG = "LOG";
+
+    private static float redWeight =  0.2126f;
+    private static float greenWeight = 0.7152f;
+    private static float blueWeight = 0.0722f;
+
 
     private static final SimpleDateFormat timeformat = new SimpleDateFormat("HH:mm:ss.SSS");
 
@@ -101,12 +104,6 @@ public final class DeviceControlActivity extends BaseActivity {
     {
         NO_COMPRESSION,
         TWO_BYTES_TO_ONE_COMPRESSION
-    }
-
-    private enum pnmType
-    {
-        PNM_BITMAP,
-        PNM_GREYSCALE
     }
 
     private enum fileIDs {
@@ -473,23 +470,28 @@ public final class DeviceControlActivity extends BaseActivity {
         return inSampleSize;
     }
 
-
-
     public Bitmap toGrayscale(Bitmap bmpOriginal)
     {
         int width, height;
-            height = bmpOriginal.getHeight();
-            width = bmpOriginal.getWidth();
+        height = bmpOriginal.getHeight();
+        width = bmpOriginal.getWidth();
 
-            Bitmap bmpGrayscale = Bitmap.createBitmap(width, height, bmpOriginal.getConfig());
-            Canvas c = new Canvas(bmpGrayscale);
-            Paint paint = new Paint();
-            ColorMatrix cm = new ColorMatrix();
-            cm.setSaturation(0);
-            ColorMatrixColorFilter f = new ColorMatrixColorFilter(cm);
-            paint.setColorFilter(f);
-            c.drawBitmap(bmpOriginal, 0, 0, paint);
-            return bmpGrayscale;
+        Bitmap bmpGrayscale = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bmpGrayscale);
+        Paint paint = new Paint();
+    //    ColorMatrix cm = new ColorMatrix();
+        float[] mat = new float[] {
+            redWeight, greenWeight, blueWeight, 0, 0,
+            redWeight, greenWeight, blueWeight, 0, 0,
+            redWeight, greenWeight, blueWeight, 0, 0,
+            0, 0, 0, 1, 0
+        };
+        ColorMatrix cm = new ColorMatrix(mat);
+        cm.setSaturation(0);
+        ColorMatrixColorFilter f = new ColorMatrixColorFilter(cm);
+        paint.setColorFilter(f);
+        c.drawBitmap(bmpOriginal, 0, 0, paint);
+        return bmpGrayscale;
     }
     // ==========================================================================
 
@@ -618,13 +620,14 @@ public final class DeviceControlActivity extends BaseActivity {
                     payload_tmp = Arrays.copyOfRange(fileData, fileBytesStart, fileBytesEnd);
                     payload = new byte[payload_tmp.length / 2];
                     for (int i = 0; i < payload.length; i++) {
-                        payload[i] = (byte) ((payload_tmp[2 * i] & 0xF0) |  ((0xF0 & payload_tmp[2 * i + 1]) >> 4));
+                        payload[i] = (byte) ( (payload_tmp[2 * i] & 0xF0) | ((payload_tmp[2 * i + 1]&0xF0) >> 4));
                     }
                 } else {
                     payload = Arrays.copyOfRange(fileData, fileBytesStart, fileBytesEnd);
                 }
 
                 Utils.log("Sending bytes: "+ fileBytesStart + " to bytes "+ fileBytesEnd);
+
                 length = (short) payload.length;
                 trailer = (byte)cntr++;         // For debugging
                 fileBytesStart = fileBytesEnd;
