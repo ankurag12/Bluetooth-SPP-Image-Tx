@@ -41,7 +41,6 @@ public abstract class BaseActivity extends SherlockActivity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         getSupportActionBar().setHomeButtonEnabled(false);
-
         if (state != null) {
             pendingRequestEnableBt = state.getBoolean(SAVED_PENDING_REQUEST_ENABLE_BT);
         }

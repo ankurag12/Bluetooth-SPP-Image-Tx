@@ -3,6 +3,7 @@ package ru.sash0k.bluetooth_terminal.activity;
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -12,6 +13,7 @@ import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Paint;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Message;
 import android.preference.PreferenceManager;
@@ -28,6 +30,11 @@ import com.actionbarsherlock.app.ActionBar;
 import com.actionbarsherlock.view.Menu;
 import com.actionbarsherlock.view.MenuItem;
 
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.io.Serializable;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
@@ -135,11 +142,34 @@ public final class DeviceControlActivity extends BaseActivity {
     private String command_ending;
     private String deviceName;
 
+    private void dumpFile(String fileName) {
+        // get the path to sdcard
+        File sdcard = Environment.getExternalStorageDirectory();
+        // to this path add a new directory path
+        File dir = new File(sdcard.getAbsolutePath() + "/sticker");
+// create this directory if not already created
+        dir.mkdirs();
+        // create the file in which we will write the contents
+        File file = new File(dir, fileName);
+
+        try {
+            FileOutputStream f = new FileOutputStream(file);
+            String data ="This is the content of my file";
+            f.write(data.getBytes());
+            f.close();
+            Utils.log("Written to file");
+
+        }catch (Exception e) {
+            Utils.log("Fail: " + e.getMessage());
+        }
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         PreferenceManager.setDefaultValues(this, R.xml.settings_activity, false);
 
+        dumpFile("sticker.bin");
         if (mHandler == null) mHandler = new BluetoothResponseHandler(this);
         else mHandler.setTarget(this);
 
@@ -340,39 +370,43 @@ public final class DeviceControlActivity extends BaseActivity {
                 if (resultCode == Activity.RESULT_OK) {
                     Uri fileUri = data.getData();
 
-                    Bitmap bitmapFile = decodeSampledBitmapFromFile(fileUri, displayWidth, displayHeight);
-                    bitmapFile = toGrayscale(bitmapFile);
-                    imageWidth = bitmapFile.getWidth();
-                    imageHeight = bitmapFile.getHeight();
+                    try {
+                        Bitmap bitmapFile = decodeSampledBitmapFromFile(getBaseContext(),fileUri,displayWidth, displayHeight);
+                        bitmapFile = toGrayscale(bitmapFile);
+                        imageWidth = bitmapFile.getWidth();
+                        imageHeight = bitmapFile.getHeight();
 
+                        ByteBuffer buffer = ByteBuffer.allocate((int)bitmapFile.getByteCount()); //Create a new buffer
+                        bitmapFile.copyPixelsToBuffer(buffer); //Move the byte data to the buffer
 
-                    ByteBuffer buffer = ByteBuffer.allocate((int)bitmapFile.getByteCount()); //Create a new buffer
-                    bitmapFile.copyPixelsToBuffer(buffer); //Move the byte data to the buffer
+                        fileData = new byte[buffer.array().length/4];
 
-                    fileData = new byte[buffer.array().length/4];
+                        for(int i = 0; i<fileData.length; i++) {
+                            // buffer.array() is still of size width x height x 4, even after grayscale conversion,
+                            // where R,G,B elements are all the same and transparency is always 255.
+                            // So for our purpose, we select every 4th element of the array
+                            fileData[i] = buffer.array()[4*i];
+                        }
 
-                    for(int i = 0; i<fileData.length; i++) {
-                        // buffer.array() is still of size width x height x 4, even after grayscale conversion,
-                        // where R,G,B elements are all the same and transparency is always 255.
-                        // So for our purpose, we select every 4th element of the array
-                        fileData[i] = buffer.array()[4*i];
+                        fileTotalSize = fileData.length;
+
+                        int i = fileUri.toString().lastIndexOf('.');
+                        if(i>=0)
+                            fileNameExt = fileUri.toString().substring(i + 1);
+
+                        Utils.log("Bitmap size = " + fileTotalSize);
+
+                        Utils.log("sdcard: " + fileUri + " total size: " + fileTotalSize);
+
+                        fileBytesStart = 0;
+                        currentDataPacketType = dataPacketType.CMD_PREP_FILE_TRANSFER;
+                        nextDataPacketType = dataPacketType.CMD_PREP_FILE_TRANSFER;
+                        sendFile();
+                    }catch (Exception e)
+                    {
+                        Utils.log(e.getMessage());
+                        break;
                     }
-
-                    fileTotalSize = fileData.length;
-
-                    int i = fileUri.toString().lastIndexOf('.');
-                    if(i>=0)
-                        fileNameExt = fileUri.toString().substring(i + 1);
-
-                    Utils.log("Bitmap size = " + fileTotalSize);
-
-                    Utils.log("sdcard: " + fileUri + " total size: " + fileTotalSize);
-
-                    fileBytesStart = 0;
-                    currentDataPacketType = dataPacketType.CMD_PREP_FILE_TRANSFER;
-                    nextDataPacketType = dataPacketType.CMD_PREP_FILE_TRANSFER;
-                    sendFile();
-
                 }
 
                 break;
@@ -381,20 +415,38 @@ public final class DeviceControlActivity extends BaseActivity {
     }
 
 
-    public static Bitmap decodeSampledBitmapFromFile(Uri fileUri, int reqWidth, int reqHeight) {
+    public static Bitmap decodeSampledBitmapFromFile(Context ct, Uri fileUri, int reqWidth, int reqHeight) {
 
+        InputStream in = null;
+        InputStream in2 = null;
+
+        Bitmap bm = null;
         // First decode with inJustDecodeBounds=true to check dimensions
         final BitmapFactory.Options options = new BitmapFactory.Options();
         options.inJustDecodeBounds = true;
-        Utils.log(fileUri.getPath());
-        BitmapFactory.decodeFile(fileUri.getPath(), options);
-        Utils.log("Image height = " + options.outHeight + " width = " + options.outWidth + " MIME type = " + options.outMimeType);
-        // Calculate inSampleSize
-        options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight);
 
-        // Decode bitmap with inSampleSize set
-        options.inJustDecodeBounds = false;
-        return BitmapFactory.decodeFile(fileUri.getPath(), options);
+        try {
+            in = ct.getContentResolver().openInputStream(fileUri);
+            BitmapFactory.decodeStream(in, null, options);
+
+            in2= ct.getContentResolver().openInputStream(fileUri);
+            //in.reset();
+
+            Utils.log("Image height = " + options.outHeight + " width = " + options.outWidth + " MIME type = " + options.outMimeType);
+            // Calculate inSampleSize
+            options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight);
+
+            // Decode bitmap with inSampleSize set
+            options.inJustDecodeBounds = false;
+            bm =BitmapFactory.decodeStream(in2, null, options);
+            in.close();
+            in2.close();
+        }catch (Exception e)
+        {
+            Utils.log("Reset fail "+e.getMessage());
+        }
+
+        return bm;
     }
 
 
@@ -421,21 +473,23 @@ public final class DeviceControlActivity extends BaseActivity {
         return inSampleSize;
     }
 
+
+
     public Bitmap toGrayscale(Bitmap bmpOriginal)
     {
         int width, height;
-        height = bmpOriginal.getHeight();
-        width = bmpOriginal.getWidth();
+            height = bmpOriginal.getHeight();
+            width = bmpOriginal.getWidth();
 
-        Bitmap bmpGrayscale = Bitmap.createBitmap(width, height, bmpOriginal.getConfig());
-        Canvas c = new Canvas(bmpGrayscale);
-        Paint paint = new Paint();
-        ColorMatrix cm = new ColorMatrix();
-        cm.setSaturation(0);
-        ColorMatrixColorFilter f = new ColorMatrixColorFilter(cm);
-        paint.setColorFilter(f);
-        c.drawBitmap(bmpOriginal, 0, 0, paint);
-        return bmpGrayscale;
+            Bitmap bmpGrayscale = Bitmap.createBitmap(width, height, bmpOriginal.getConfig());
+            Canvas c = new Canvas(bmpGrayscale);
+            Paint paint = new Paint();
+            ColorMatrix cm = new ColorMatrix();
+            cm.setSaturation(0);
+            ColorMatrixColorFilter f = new ColorMatrixColorFilter(cm);
+            paint.setColorFilter(f);
+            c.drawBitmap(bmpOriginal, 0, 0, paint);
+            return bmpGrayscale;
     }
     // ==========================================================================
 
@@ -564,7 +618,7 @@ public final class DeviceControlActivity extends BaseActivity {
                     payload_tmp = Arrays.copyOfRange(fileData, fileBytesStart, fileBytesEnd);
                     payload = new byte[payload_tmp.length / 2];
                     for (int i = 0; i < payload.length; i++) {
-                        payload[i] = (byte) ((payload_tmp[2 * i] & 0xF0) | (payload_tmp[2 * i + 1] >> 4));
+                        payload[i] = (byte) ((payload_tmp[2 * i] & 0xF0) |  ((0xF0 & payload_tmp[2 * i + 1]) >> 4));
                     }
                 } else {
                     payload = Arrays.copyOfRange(fileData, fileBytesStart, fileBytesEnd);
