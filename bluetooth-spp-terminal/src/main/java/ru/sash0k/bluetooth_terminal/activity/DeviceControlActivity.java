@@ -12,6 +12,7 @@ import android.graphics.ColorMatrix;
 import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Matrix;
 import android.graphics.Paint;
+import android.graphics.RectF;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
@@ -53,7 +54,7 @@ public final class DeviceControlActivity extends BaseActivity {
     private static final String DEVICE_NAME = "DEVICE_NAME";
     private static final String LOG = "LOG";
 
-    private static float redWeight =  0.2126f;
+    private static float redWeight = 0.2126f;
     private static float greenWeight = 0.7152f;
     private static float blueWeight = 0.0722f;
 
@@ -73,25 +74,30 @@ public final class DeviceControlActivity extends BaseActivity {
     private static int fileBytesEnd = 0;
 
     private static int maxDataPacketSizeBytes = 329;    // This is a hard constant. 329
-    private static int maxPayloadSizeBytes = maxDataPacketSizeBytes - 5;   // This is a hard constant. 329-5=324
-    private static int maxNumDataPacketsInBatch = 100;    // Number of data packets in one "batch" of write operation
+    private static int maxPayloadSizeBytes = maxDataPacketSizeBytes - 5;   // This is a hard
+    // constant. 329-5=324
+    private static int maxNumDataPacketsInBatch = 100;    // Number of data packets in one
+    // "batch" of write operation
 
     private static int imageWidth;
     private static int imageHeight;
 
-    // Display hardware (EPD) dependent constants. Ideally, they should be read from the hardware itself
+    // Display hardware (EPD) dependent constants. Ideally, they should be read from the hardware
+    // itself
+    // The display pixels should always be even numbers
     private static int displayWidth = 1280;
     private static int displayHeight = 960;
-    private static boolean fourBitPixels = true;       // File data packet will have two-bytes-to-one compression
-    private static String pnmMagicNumber = "P5";       // Depends on Hardware. P5 for grayscale, P6 for RGB (color)
+    private static boolean fourBitPixels = true;       // File data packet will have
+    // two-bytes-to-one compression
+    private static String pnmMagicNumber = "P5";       // Depends on Hardware. P5 for grayscale,
+    // P6 for RGB (color)
     private static int maxColorValue = 255;
 
     private static String ack = "1";
 
-    private static int cntr=0;
+    private static int cntr = 0;
 
-    private enum dataPacketType
-    {
+    private enum dataPacketType {
         CMD_PREP_FILE_TRANSFER,
         PNM_FILE_HEADER,
         DATA_FILE_CHUNK,
@@ -102,19 +108,18 @@ public final class DeviceControlActivity extends BaseActivity {
 
     }
 
-    private enum dataPacketCompression
-    {
+    private enum dataPacketCompression {
         NO_COMPRESSION,
         TWO_BYTES_TO_ONE_COMPRESSION
     }
 
     private enum fileIDs {
-        ECODE_FILE_ID (1),
-        VCOM_FILE_ID (2),
-        WAVEFORM_FILE_ID (3),
-        HWINFO_FILE_ID (4),
-        REG_OVERRIDE_FILE_ID (5),
-        RECEIVED_IMG_FILE_ID (6);
+        ECODE_FILE_ID(1),
+        VCOM_FILE_ID(2),
+        WAVEFORM_FILE_ID(3),
+        HWINFO_FILE_ID(4),
+        REG_OVERRIDE_FILE_ID(5),
+        RECEIVED_IMG_FILE_ID(6);
 
         private int value;
 
@@ -153,12 +158,12 @@ public final class DeviceControlActivity extends BaseActivity {
 
         try {
             FileOutputStream f = new FileOutputStream(file);
-            String data ="This is the content of my file";
+            String data = "This is the content of my file";
             f.write(data.getBytes());
             f.close();
             Utils.log("Written to file");
 
-        }catch (Exception e) {
+        } catch (Exception e) {
             Utils.log("Fail: " + e.getMessage());
         }
     }
@@ -313,7 +318,8 @@ public final class DeviceControlActivity extends BaseActivity {
         final String mode = Utils.getPrefence(this, getString(R.string.pref_commands_mode));
         this.hexMode = mode.equals("HEX");
         if (hexMode) {
-            commandEditText.setInputType(InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
+            commandEditText.setInputType(InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS | InputType
+                    .TYPE_TEXT_FLAG_CAP_CHARACTERS);
             commandEditText.setFilters(new InputFilter[]{new Utils.InputFilterHex()});
         } else {
             commandEditText.setInputType(InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
@@ -323,7 +329,8 @@ public final class DeviceControlActivity extends BaseActivity {
         this.command_ending = getCommandEnding();
 
         this.show_timings = Utils.getBooleanPrefence(this, getString(R.string.pref_log_timing));
-        this.show_direction = Utils.getBooleanPrefence(this, getString(R.string.pref_log_direction));
+        this.show_direction = Utils.getBooleanPrefence(this, getString(R.string
+                .pref_log_direction));
         this.needClean = Utils.getBooleanPrefence(this, getString(R.string.pref_need_clean));
     }
     // ============================================================================
@@ -336,6 +343,7 @@ public final class DeviceControlActivity extends BaseActivity {
         else result = "";
         return result;
     }
+
     // ============================================================================
     public void getData(View view) {
         Intent mediaIntent = new Intent(Intent.ACTION_GET_CONTENT);
@@ -370,49 +378,39 @@ public final class DeviceControlActivity extends BaseActivity {
                     Uri fileUri = data.getData();
 
                     try {
-                        Bitmap bitmapFile = decodeSampledBitmapFromFile(getBaseContext(),fileUri);
+                        Bitmap bitmapFile = decodeSampledBitmapFromFile(getBaseContext(), fileUri);
 
                         ImageView image = (ImageView) findViewById(R.id.imageView);
 
                         bitmapFile = toGrayscale(bitmapFile);
+
+                        bitmapFile = getResizedBitmap(bitmapFile);
+
                         imageWidth = bitmapFile.getWidth();
                         imageHeight = bitmapFile.getHeight();
 
-                        imageWidth &= ~1;
-                        imageHeight &= ~1;
-
-                        if(imageWidth > displayWidth)
-                        {
-                            imageWidth = displayWidth;
-                        }
-
-                        if(imageHeight > displayHeight)
-                        {
-                            imageHeight = displayHeight;
-                        }
-
-                        bitmapFile = getResizedBitmap(bitmapFile, imageWidth, imageHeight);
-
                         image.setImageBitmap(bitmapFile);
 
-                        Utils.log("Img Width: " + imageWidth + "Height: "+imageHeight);
+                        Utils.log("Img Width: " + imageWidth + "Height: " + imageHeight);
 
-                        ByteBuffer buffer = ByteBuffer.allocate((int)bitmapFile.getByteCount()); //Create a new buffer
+                        ByteBuffer buffer = ByteBuffer.allocate((int) bitmapFile.getByteCount());
+                        //Create a new buffer
                         bitmapFile.copyPixelsToBuffer(buffer); //Move the byte data to the buffer
 
-                        fileData = new byte[buffer.array().length/4];
+                        fileData = new byte[buffer.array().length / 4];
 
-                        for(int i = 0; i<fileData.length; i++) {
-                            // buffer.array() is still of size width x height x 4, even after grayscale conversion,
+                        for (int i = 0; i < fileData.length; i++) {
+                            // buffer.array() is still of size width x height x 4, even after
+                            // grayscale conversion,
                             // where R,G,B elements are all the same and transparency is always 255.
                             // So for our purpose, we select every 4th element of the array
-                            fileData[i] = buffer.array()[4*i];
+                            fileData[i] = buffer.array()[4 * i];
                         }
 
                         fileTotalSize = fileData.length;
 
                         int i = fileUri.toString().lastIndexOf('.');
-                        if(i>=0)
+                        if (i >= 0)
                             fileNameExt = fileUri.toString().substring(i + 1);
 
                         Utils.log("Bitmap size = " + fileTotalSize);
@@ -423,8 +421,7 @@ public final class DeviceControlActivity extends BaseActivity {
                         currentDataPacketType = dataPacketType.CMD_PREP_FILE_TRANSFER;
                         nextDataPacketType = dataPacketType.CMD_PREP_FILE_TRANSFER;
                         sendFile();
-                    }catch (Exception e)
-                    {
+                    } catch (Exception e) {
                         Utils.log(e.getMessage());
                         break;
                     }
@@ -450,26 +447,25 @@ public final class DeviceControlActivity extends BaseActivity {
             in = ct.getContentResolver().openInputStream(fileUri);
             BitmapFactory.decodeStream(in, null, options);
 
-            in2= ct.getContentResolver().openInputStream(fileUri);
+            in2 = ct.getContentResolver().openInputStream(fileUri);
             //in.reset();
 
-            Utils.log("Image height = " + options.outHeight + " width = " + options.outWidth + " MIME type = " + options.outMimeType);
+            Utils.log("Image height = " + options.outHeight + " width = " + options.outWidth + " " +
+                    "MIME type = " + options.outMimeType);
 
             // Decode bitmap with inSampleSize set
             options.inJustDecodeBounds = false;
-            bm =BitmapFactory.decodeStream(in2, null, options);
+            bm = BitmapFactory.decodeStream(in2, null, options);
             in.close();
             in2.close();
-        }catch (Exception e)
-        {
-            Utils.log("Reset fail "+e.getMessage());
+        } catch (Exception e) {
+            Utils.log("Reset fail " + e.getMessage());
         }
 
         return bm;
     }
 
-    public Bitmap toGrayscale(Bitmap bmpOriginal)
-    {
+    public Bitmap toGrayscale(Bitmap bmpOriginal) {
         int width, height;
         height = bmpOriginal.getHeight();
         width = bmpOriginal.getWidth();
@@ -477,12 +473,12 @@ public final class DeviceControlActivity extends BaseActivity {
         Bitmap bmpGrayscale = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         Canvas c = new Canvas(bmpGrayscale);
         Paint paint = new Paint();
-    //    ColorMatrix cm = new ColorMatrix();
-        float[] mat = new float[] {
-            redWeight, greenWeight, blueWeight, 0, 0,
-            redWeight, greenWeight, blueWeight, 0, 0,
-            redWeight, greenWeight, blueWeight, 0, 0,
-            0, 0, 0, 1, 0
+        //    ColorMatrix cm = new ColorMatrix();
+        float[] mat = new float[]{
+                redWeight, greenWeight, blueWeight, 0, 0,
+                redWeight, greenWeight, blueWeight, 0, 0,
+                redWeight, greenWeight, blueWeight, 0, 0,
+                0, 0, 0, 1, 0
         };
         ColorMatrix cm = new ColorMatrix(mat);
         cm.setSaturation(0);
@@ -492,25 +488,44 @@ public final class DeviceControlActivity extends BaseActivity {
         return bmpGrayscale;
     }
 
-    public Bitmap getResizedBitmap(Bitmap bm, int newWidth, int newHeight) {
-        int width = bm.getWidth();
-        int height = bm.getHeight();
-        float scaleWidth = ((float) newWidth) / width;
-        float scaleHeight = ((float) newHeight) / height;
-        // CREATE A MATRIX FOR THE MANIPULATION
-        Matrix matrix = new Matrix();
-        // RESIZE THE BIT MAP
-        matrix.postScale(scaleWidth, scaleHeight);
+    public Bitmap getResizedBitmap(Bitmap b) {
 
-        // "RECREATE" THE NEW BITMAP
-        Bitmap resizedBitmap = Bitmap.createBitmap(
-                bm, 0, 0, width, height, matrix, false);
-        bm.recycle();
-        return resizedBitmap;
+//        imageWidth = b.getWidth();
+//        imageHeight = b.getHeight();
+
+        //changing to nearest even number
+//        imageWidth &= ~1;
+//        imageHeight &= ~1;
+//
+//        if (imageWidth > displayWidth) {
+//            imageWidth = displayWidth;
+//        }
+//
+//        if (imageHeight > displayHeight) {
+//            imageHeight = displayHeight;
+//        }
+
+//        float scaleWidth = ((float) newWidth) / width;
+//        float scaleHeight = ((float) newHeight) / height;
+
+        Matrix m = new Matrix();
+        m.setRectToRect(new RectF(0, 0, b.getWidth(), b.getHeight()), new RectF(0, 0, displayWidth,
+                displayHeight), Matrix.ScaleToFit.CENTER);
+        return Bitmap.createBitmap(b, 0, 0, b.getWidth(), b.getHeight(), m, true);
+
+//        // CREATE A MATRIX FOR THE MANIPULATION
+//        Matrix matrix = new Matrix();
+//        // RESIZE THE BIT MAP
+//        matrix.postScale(scaleWidth, scaleHeight);
+//
+//        // "RECREATE" THE NEW BITMAP
+//        Bitmap resizedBitmap = Bitmap.createBitmap(
+//                bm, 0, 0, width, height, matrix, false);
+//        bm.recycle();
+//        return resizedBitmap;
     }
 
     // ==========================================================================
-
 
 
     private void setupConnector(BluetoothDevice connectedDevice) {
@@ -560,7 +575,8 @@ public final class DeviceControlActivity extends BaseActivity {
         if (outgoing) msg.append('\n');
         logTextView.append(msg);
 
-        final int scrollAmount = logTextView.getLayout().getLineTop(logTextView.getLineCount()) - logTextView.getHeight();
+        final int scrollAmount = logTextView.getLayout().getLineTop(logTextView.getLineCount()) -
+                logTextView.getHeight();
         if (scrollAmount > 0)
             logTextView.scrollTo(0, scrollAmount);
         else logTextView.scrollTo(0, 0);
@@ -575,21 +591,24 @@ public final class DeviceControlActivity extends BaseActivity {
         byte id;
         byte comp;
         short length;
-        byte [] payload_tmp;
-        byte [] payload;
+        byte[] payload_tmp;
+        byte[] payload;
         byte trailer;
         byte[] dataPacketBytes;
 
 
-        switch(currentDataPacketType) {
+        switch (currentDataPacketType) {
 
             case CMD_PREP_FILE_TRANSFER:
                 Utils.log("Prep for file transfer");
                 id = (byte) dataPacketType.CMD_PREP_FILE_TRANSFER.ordinal();
                 comp = (byte) dataPacketCompression.NO_COMPRESSION.ordinal();
 
-                // Positioning image in the center of the display and displaying full image (no cropping)
-                DisplayCoordinates displayCoordinates = new DisplayCoordinates((displayWidth - imageWidth)/2,(displayHeight - imageHeight)/2,imageWidth,imageHeight,0,0);
+                // Positioning image in the center of the display and displaying full image (no
+                // cropping)
+                DisplayCoordinates displayCoordinates = new DisplayCoordinates((displayWidth -
+                        imageWidth) / 2, (displayHeight - imageHeight) / 2, imageWidth,
+                        imageHeight, 0, 0);
 
                 payload = displayCoordinates.dispCoordToByteArray(displayCoordinates);
                 length = (short) payload.length;
@@ -602,7 +621,8 @@ public final class DeviceControlActivity extends BaseActivity {
                 id = (byte) dataPacketType.PNM_FILE_HEADER.ordinal();
                 comp = (byte) dataPacketCompression.NO_COMPRESSION.ordinal();
 
-                String header = String.format("%s\n%d %d\n%d\n", pnmMagicNumber, imageWidth, imageHeight, maxColorValue);
+                String header = String.format("%s\n%d %d\n%d\n", pnmMagicNumber, imageWidth,
+                        imageHeight, maxColorValue);
 
                 payload = header.getBytes();
                 length = (short) payload.length;
@@ -615,11 +635,11 @@ public final class DeviceControlActivity extends BaseActivity {
                 comp = (byte) dataPacketCompression.TWO_BYTES_TO_ONE_COMPRESSION.ordinal();
                 nextDataPacketType = dataPacketType.DATA_FILE_CHUNK;
                 if (fourBitPixels == true)
-                    fileBytesEnd = fileBytesStart + maxPayloadSizeBytes*2;
+                    fileBytesEnd = fileBytesStart + maxPayloadSizeBytes * 2;
                 else
                     fileBytesEnd = fileBytesStart + maxPayloadSizeBytes;
 
-                if(fileBytesEnd >= fileTotalSize) {
+                if (fileBytesEnd >= fileTotalSize) {
                     fileBytesEnd = fileTotalSize;
                     Utils.log("Sending last chunk of data");
                     nextDataPacketType = dataPacketType.CMD_END_OF_FILE;
@@ -629,16 +649,17 @@ public final class DeviceControlActivity extends BaseActivity {
                     payload_tmp = Arrays.copyOfRange(fileData, fileBytesStart, fileBytesEnd);
                     payload = new byte[payload_tmp.length / 2];
                     for (int i = 0; i < payload.length; i++) {
-                        payload[i] = (byte) ( (payload_tmp[2 * i] & 0xF0) | ((payload_tmp[2 * i + 1]&0xF0) >> 4));
+                        payload[i] = (byte) ((payload_tmp[2 * i] & 0xF0) | ((payload_tmp[2 * i +
+                                1] & 0xF0) >> 4));
                     }
                 } else {
                     payload = Arrays.copyOfRange(fileData, fileBytesStart, fileBytesEnd);
                 }
 
-                Utils.log("Sending bytes: "+ fileBytesStart + " to bytes "+ fileBytesEnd);
+                Utils.log("Sending bytes: " + fileBytesStart + " to bytes " + fileBytesEnd);
 
                 length = (short) payload.length;
-                trailer = (byte)cntr++;         // For debugging
+                trailer = (byte) cntr++;         // For debugging
                 fileBytesStart = fileBytesEnd;
                 break;
 
@@ -664,7 +685,7 @@ public final class DeviceControlActivity extends BaseActivity {
             case CMD_DISPLAY_IMAGE:
                 id = (byte) dataPacketType.CMD_DISPLAY_IMAGE.ordinal();
                 comp = (byte) dataPacketCompression.NO_COMPRESSION.ordinal();
-                payload = new byte[]{(byte)fileIDs.RECEIVED_IMG_FILE_ID.getValue()};
+                payload = new byte[]{(byte) fileIDs.RECEIVED_IMG_FILE_ID.getValue()};
                 length = (short) payload.length;
                 trailer = '\n';
                 nextDataPacketType = dataPacketType.CMD_DEFAULT;
@@ -678,7 +699,7 @@ public final class DeviceControlActivity extends BaseActivity {
                 trailer = '\n';
         }
 
-        DataPacket dataPacket = new DataPacket(id, comp, length, payload, trailer );
+        DataPacket dataPacket = new DataPacket(id, comp, length, payload, trailer);
 
         dataPacketBytes = dataPacket.dataPacketToByteArray(dataPacket);
         return dataPacketBytes;
@@ -703,14 +724,15 @@ public final class DeviceControlActivity extends BaseActivity {
 
     public void sendBtDataPacketsBatch() {
         int count = 0;
-        byte[] dataPacketsBatch_tmp = new byte[maxNumDataPacketsInBatch*maxDataPacketSizeBytes];
+        byte[] dataPacketsBatch_tmp = new byte[maxNumDataPacketsInBatch * maxDataPacketSizeBytes];
         int batchSize = 0;
         do {
             byte[] dataPacketBytes = createDataPacket();
-            System.arraycopy(dataPacketBytes, 0, dataPacketsBatch_tmp, batchSize, dataPacketBytes.length);
+            System.arraycopy(dataPacketBytes, 0, dataPacketsBatch_tmp, batchSize, dataPacketBytes
+                    .length);
             batchSize += dataPacketBytes.length;
             count++;
-        } while(nextDataPacketType==currentDataPacketType && count<maxNumDataPacketsInBatch);
+        } while (nextDataPacketType == currentDataPacketType && count < maxNumDataPacketsInBatch);
 
         currentDataPacketType = nextDataPacketType;
         byte[] dataPacketsBatch = new byte[batchSize];
@@ -722,10 +744,11 @@ public final class DeviceControlActivity extends BaseActivity {
     }
 
     public void sendFile() {
-        cntr=0;                 // For debugging, cntr can be used to tag each data packet as its trailer
+        cntr = 0;                 // For debugging, cntr can be used to tag each data packet as
+        // its trailer
         do {
             sendBtDataPacketsBatch();
-        } while(nextDataPacketType!=dataPacketType.CMD_DEFAULT);
+        } while (nextDataPacketType != dataPacketType.CMD_DEFAULT);
     }
 
     void setDeviceName(String deviceName) {
@@ -776,10 +799,9 @@ public final class DeviceControlActivity extends BaseActivity {
                         final String readMessage = (String) msg.obj;
                         //Utils.log("incoming msg: " + readMessage);
 
-                        if(readMessage.contains(ack)) {
+                        if (readMessage.contains(ack)) {
                             Utils.log("ack rx: ");
-                        }
-                        else {
+                        } else {
                             Utils.log("Invalid ACK, must resend Data Packet ");
                             //activity.sendBtDataPacket();
                         }
@@ -824,16 +846,18 @@ public final class DeviceControlActivity extends BaseActivity {
             dataPacketTrailer = trailer;
         }
 
-        // TODO: Not a good code design with all the hard coding but Serialization doesn't work as in C
+        // TODO: Not a good code design with all the hard coding but Serialization doesn't work
+        // as in C
         // Need to come up with a better way
         public byte[] dataPacketToByteArray(DataPacket dataPacket) {
-            byte[] dataPacketBytes = new byte[dataPacket.dataPacketPayload.length+5];
+            byte[] dataPacketBytes = new byte[dataPacket.dataPacketPayload.length + 5];
             dataPacketBytes[0] = dataPacket.dataPacketID;
             dataPacketBytes[1] = dataPacket.dataPacketComp;
-            dataPacketBytes[2] = (byte) (dataPacket.dataPacketLength>>8*0 & 0xFF);
-            dataPacketBytes[3] = (byte) (dataPacket.dataPacketLength>>8*1 & 0xFF);
-            System.arraycopy(dataPacket.dataPacketPayload,0,dataPacketBytes,4,dataPacket.dataPacketPayload.length);
-            dataPacketBytes[dataPacketBytes.length-1] = dataPacket.dataPacketTrailer;
+            dataPacketBytes[2] = (byte) (dataPacket.dataPacketLength >> 8 * 0 & 0xFF);
+            dataPacketBytes[3] = (byte) (dataPacket.dataPacketLength >> 8 * 1 & 0xFF);
+            System.arraycopy(dataPacket.dataPacketPayload, 0, dataPacketBytes, 4, dataPacket
+                    .dataPacketPayload.length);
+            dataPacketBytes[dataPacketBytes.length - 1] = dataPacket.dataPacketTrailer;
             return dataPacketBytes;
         }
 
@@ -856,12 +880,15 @@ public final class DeviceControlActivity extends BaseActivity {
         private int leftIn;
         private int topIn;
 
-        private int getFieldIndex(String string){
-            String fields[] = new String[]{"leftOut", "topOut", "widthOut", "heightOut", "leftIn", "topIn"};    // This sequence should match what is expected at the receiving end
+        private int getFieldIndex(String string) {
+            String fields[] = new String[]{"leftOut", "topOut", "widthOut", "heightOut",
+                    "leftIn", "topIn"};    // This sequence should match what is expected at the
+            // receiving end
             return Arrays.asList(fields).indexOf(string);
         }
 
-        public DisplayCoordinates(int areaLeft, int areaTop, int areaWidth, int areaHeight, int imgLeft, int imgTop) {
+        public DisplayCoordinates(int areaLeft, int areaTop, int areaWidth, int areaHeight, int
+                imgLeft, int imgTop) {
             leftOut = areaLeft;
             topOut = areaTop;
             widthOut = areaWidth;
@@ -871,12 +898,15 @@ public final class DeviceControlActivity extends BaseActivity {
         }
 
         public byte[] dispCoordToByteArray(DisplayCoordinates displayCoordinates) {
-            Field field[] = this.getClass().getDeclaredFields();        // getDeclaredFields() returns fields in any order
+            Field field[] = this.getClass().getDeclaredFields();        // getDeclaredFields()
+            // returns fields in any order
             byte[] dispCoordBytes = new byte[field.length * 2];
             try {
                 for (int i = 0; i < field.length; i++) {
-                    dispCoordBytes[2*getFieldIndex(field[i].getName())] = (byte) (field[i].getInt(displayCoordinates) >> 8 * 0 & 0xFF);
-                    dispCoordBytes[2*getFieldIndex(field[i].getName()) + 1] = (byte) (field[i].getInt(displayCoordinates) >> 8 * 1 & 0xFF);
+                    dispCoordBytes[2 * getFieldIndex(field[i].getName())] = (byte) (field[i]
+                            .getInt(displayCoordinates) >> 8 * 0 & 0xFF);
+                    dispCoordBytes[2 * getFieldIndex(field[i].getName()) + 1] = (byte) (field[i]
+                            .getInt(displayCoordinates) >> 8 * 1 & 0xFF);
                 }
             } catch (IllegalAccessException e) {
                 Utils.log("IllegalAccessException in DisplayCoordinates");
