@@ -370,17 +370,32 @@ public final class DeviceControlActivity extends BaseActivity {
                     Uri fileUri = data.getData();
 
                     try {
-                        Bitmap bitmapFile = decodeSampledBitmapFromFile(getBaseContext(),fileUri,displayWidth, displayHeight);
+                        Bitmap bitmapFile = decodeSampledBitmapFromFile(getBaseContext(),fileUri);
 
                         ImageView image = (ImageView) findViewById(R.id.imageView);
 
                         bitmapFile = toGrayscale(bitmapFile);
-                        bitmapFile = getResizedBitmap(bitmapFile, 640, 640);
+                        imageWidth = bitmapFile.getWidth();
+                        imageHeight = bitmapFile.getHeight();
+
+                        imageWidth &= ~1;
+                        imageHeight &= ~1;
+
+                        if(imageWidth > displayWidth)
+                        {
+                            imageWidth = displayWidth;
+                        }
+
+                        if(imageHeight > displayHeight)
+                        {
+                            imageHeight = displayHeight;
+                        }
+
+                        bitmapFile = getResizedBitmap(bitmapFile, imageWidth, imageHeight);
 
                         image.setImageBitmap(bitmapFile);
 
-                        imageWidth = bitmapFile.getWidth();
-                        imageHeight = bitmapFile.getHeight();
+                        Utils.log("Img Width: " + imageWidth + "Height: "+imageHeight);
 
                         ByteBuffer buffer = ByteBuffer.allocate((int)bitmapFile.getByteCount()); //Create a new buffer
                         bitmapFile.copyPixelsToBuffer(buffer); //Move the byte data to the buffer
@@ -421,7 +436,7 @@ public final class DeviceControlActivity extends BaseActivity {
     }
 
 
-    public static Bitmap decodeSampledBitmapFromFile(Context ct, Uri fileUri, int reqWidth, int reqHeight) {
+    public static Bitmap decodeSampledBitmapFromFile(Context ct, Uri fileUri) {
 
         InputStream in = null;
         InputStream in2 = null;
@@ -439,8 +454,6 @@ public final class DeviceControlActivity extends BaseActivity {
             //in.reset();
 
             Utils.log("Image height = " + options.outHeight + " width = " + options.outWidth + " MIME type = " + options.outMimeType);
-            // Calculate inSampleSize
-            options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight);
 
             // Decode bitmap with inSampleSize set
             options.inJustDecodeBounds = false;
@@ -453,30 +466,6 @@ public final class DeviceControlActivity extends BaseActivity {
         }
 
         return bm;
-    }
-
-
-    public static int calculateInSampleSize(
-            BitmapFactory.Options options, int reqWidth, int reqHeight) {
-        // Raw height and width of image
-        final int height = options.outHeight;
-        final int width = options.outWidth;
-        int inSampleSize = 1;
-
-        if (height > reqHeight || width > reqWidth) {
-
-            final int halfHeight = height / 2;
-            final int halfWidth = width / 2;
-
-            // Calculate the largest inSampleSize value that is a power of 2 and keeps both
-            // height and width larger than the requested height and width.
-            while ((halfHeight / inSampleSize) > reqHeight
-                    && (halfWidth / inSampleSize) > reqWidth) {
-                inSampleSize *= 2;
-            }
-        }
-
-        return inSampleSize;
     }
 
     public Bitmap toGrayscale(Bitmap bmpOriginal)
@@ -599,13 +588,6 @@ public final class DeviceControlActivity extends BaseActivity {
                 id = (byte) dataPacketType.CMD_PREP_FILE_TRANSFER.ordinal();
                 comp = (byte) dataPacketCompression.NO_COMPRESSION.ordinal();
 
-                // Make sure that the image dimensions are even numbers, else ignore the last row/column
-                if(imageWidth % 2 != 0) {
-                    imageWidth -= 1;
-                }
-                if(imageHeight % 2 != 0) {
-                    imageHeight -= 1;
-                }
                 // Positioning image in the center of the display and displaying full image (no cropping)
                 DisplayCoordinates displayCoordinates = new DisplayCoordinates((displayWidth - imageWidth)/2,(displayHeight - imageHeight)/2,imageWidth,imageHeight,0,0);
 
