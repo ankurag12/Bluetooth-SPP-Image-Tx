@@ -45,7 +45,7 @@ import java.util.Arrays;
 import java.util.Date;
 
 import Catalano.Imaging.FastBitmap;
-import Catalano.Imaging.Filters.ImageAdjust;
+import Catalano.Imaging.Filters.HistogramAdjust;
 import ru.sash0k.bluetooth_terminal.DeviceData;
 import ru.sash0k.bluetooth_terminal.R;
 import ru.sash0k.bluetooth_terminal.Utils;
@@ -507,7 +507,7 @@ public final class DeviceControlActivity extends BaseActivity {
     public Bitmap enhanceBitmap(Bitmap b) {
         FastBitmap fbm = new FastBitmap(b);
 
-        ImageAdjust corr1 = new ImageAdjust();
+        HistogramAdjust corr1 = new HistogramAdjust(0.01);
 
         fbm.toGrayscale();
 
