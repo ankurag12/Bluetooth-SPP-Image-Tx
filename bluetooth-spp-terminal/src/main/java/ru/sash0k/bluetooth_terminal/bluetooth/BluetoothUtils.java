@@ -1,15 +1,15 @@
 package ru.sash0k.bluetooth_terminal.bluetooth;
 
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothSocket;
+import android.os.ParcelUuid;
+import android.util.Log;
+
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
-
-import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothSocket;
-import android.os.ParcelUuid;
-import android.util.Log;
 
 public class BluetoothUtils {
     private static final String TAG = "BluetoothUtils";

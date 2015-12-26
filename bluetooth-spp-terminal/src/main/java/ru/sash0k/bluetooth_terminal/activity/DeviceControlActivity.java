@@ -44,6 +44,8 @@ import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Date;
 
+import Catalano.Imaging.FastBitmap;
+import Catalano.Imaging.Filters.ImageAdjust;
 import ru.sash0k.bluetooth_terminal.DeviceData;
 import ru.sash0k.bluetooth_terminal.R;
 import ru.sash0k.bluetooth_terminal.Utils;
@@ -85,8 +87,11 @@ public final class DeviceControlActivity extends BaseActivity {
     // Display hardware (EPD) dependent constants. Ideally, they should be read from the hardware
     // itself
     // The display pixels should always be even numbers
-    private static int displayWidth = 1280;
-    private static int displayHeight = 960;
+    private static int displayWidth = 1280;//0;
+    private static int displayHeight = 960;//0;
+//    private static int displayWidth = 800;//0;
+//    private static int displayHeight = 600;//0;
+
     private static boolean fourBitPixels = true;       // File data packet will have
     // two-bytes-to-one compression
     private static String pnmMagicNumber = "P5";       // Depends on Hardware. P5 for grayscale,
@@ -380,16 +385,25 @@ public final class DeviceControlActivity extends BaseActivity {
                     try {
                         Bitmap bitmapFile = decodeSampledBitmapFromFile(getBaseContext(), fileUri);
 
-                        ImageView image = (ImageView) findViewById(R.id.imageView);
+                        Bitmap bmp2 = bitmapFile.copy(bitmapFile
+                                .getConfig(), true);
 
-                        bitmapFile = toGrayscale(bitmapFile);
+                        bmp2 = toGrayscale(bmp2);
+
+                        bmp2 = getResizedBitmap(bmp2);
+
+                        ImageView image = (ImageView) findViewById(R.id.imageView);
+                        image.setImageBitmap(bmp2);
 
                         bitmapFile = getResizedBitmap(bitmapFile);
 
+                        bitmapFile = enhanceBitmap(bitmapFile);
+
+                        ImageView image1 = (ImageView) findViewById(R.id.imageView2);
+                        image1.setImageBitmap(bitmapFile);
+
                         imageWidth = bitmapFile.getWidth();
                         imageHeight = bitmapFile.getHeight();
-
-                        image.setImageBitmap(bitmapFile);
 
                         Utils.log("Img Width: " + imageWidth + "Height: " + imageHeight);
 
@@ -485,44 +499,73 @@ public final class DeviceControlActivity extends BaseActivity {
         ColorMatrixColorFilter f = new ColorMatrixColorFilter(cm);
         paint.setColorFilter(f);
         c.drawBitmap(bmpOriginal, 0, 0, paint);
+
+
         return bmpGrayscale;
+    }
+
+    public Bitmap enhanceBitmap(Bitmap b) {
+        FastBitmap fbm = new FastBitmap(b);
+
+        ImageAdjust corr1 = new ImageAdjust();
+
+        fbm.toGrayscale();
+
+        corr1.applyInPlace(fbm);
+
+        return fbm.toBitmap();
+    }
+
+    /**
+     * @param bmp        input bitmap
+     * @param contrast   0..10 1 is default
+     * @param brightness -255..255 0 is default
+     * @return new bitmap
+     */
+    public static Bitmap changeBitmapContrastBrightness(Bitmap bmp, float contrast, float
+            brightness) {
+        ColorMatrix cm = new ColorMatrix(new float[]
+                {
+                        contrast, 0, 0, 0, brightness,
+                        0, contrast, 0, 0, brightness,
+                        0, 0, contrast, 0, brightness,
+                        0, 0, 0, 1, 0
+                });
+
+        Bitmap ret = Bitmap.createBitmap(bmp.getWidth(), bmp.getHeight(), bmp.getConfig());
+
+        Canvas canvas = new Canvas(ret);
+
+        Paint paint = new Paint();
+        paint.setColorFilter(new ColorMatrixColorFilter(cm));
+        canvas.drawBitmap(bmp, 0, 0, paint);
+
+        return ret;
     }
 
     public Bitmap getResizedBitmap(Bitmap b) {
 
-//        imageWidth = b.getWidth();
-//        imageHeight = b.getHeight();
+        int imgWidth = b.getWidth();
+        int imgHeight = b.getHeight();
 
         //changing to nearest even number
-//        imageWidth &= ~1;
-//        imageHeight &= ~1;
-//
-//        if (imageWidth > displayWidth) {
-//            imageWidth = displayWidth;
-//        }
-//
-//        if (imageHeight > displayHeight) {
-//            imageHeight = displayHeight;
-//        }
-
-//        float scaleWidth = ((float) newWidth) / width;
-//        float scaleHeight = ((float) newHeight) / height;
+        imgWidth &= ~1;
+        imgHeight &= ~1;
 
         Matrix m = new Matrix();
-        m.setRectToRect(new RectF(0, 0, b.getWidth(), b.getHeight()), new RectF(0, 0, displayWidth,
+        m.setRectToRect(new RectF(0, 0, imgWidth, imgHeight), new RectF(0, 0, displayWidth,
                 displayHeight), Matrix.ScaleToFit.CENTER);
-        return Bitmap.createBitmap(b, 0, 0, b.getWidth(), b.getHeight(), m, true);
 
-//        // CREATE A MATRIX FOR THE MANIPULATION
-//        Matrix matrix = new Matrix();
-//        // RESIZE THE BIT MAP
-//        matrix.postScale(scaleWidth, scaleHeight);
-//
-//        // "RECREATE" THE NEW BITMAP
-//        Bitmap resizedBitmap = Bitmap.createBitmap(
-//                bm, 0, 0, width, height, matrix, false);
-//        bm.recycle();
-//        return resizedBitmap;
+        Bitmap new_bm = Bitmap.createBitmap(b, 0, 0, imgWidth, imgHeight, m, true);
+
+        //the scaled image might contain odd pixels, need to confirm and change to even
+        imgWidth = new_bm.getWidth();
+        imgHeight = new_bm.getHeight();
+        if ((1 == (imgWidth & 1)) | (1 == (imgHeight & 1))) {
+            return new_bm.createScaledBitmap(new_bm, (imgWidth & ~1), (imgHeight & ~1), true);
+        }
+
+        return new_bm;
     }
 
     // ==========================================================================
@@ -656,7 +699,7 @@ public final class DeviceControlActivity extends BaseActivity {
                     payload = Arrays.copyOfRange(fileData, fileBytesStart, fileBytesEnd);
                 }
 
-                Utils.log("Sending bytes: " + fileBytesStart + " to bytes " + fileBytesEnd);
+                //Utils.log("Sending bytes: " + fileBytesStart + " to bytes " + fileBytesEnd);
 
                 length = (short) payload.length;
                 trailer = (byte) cntr++;         // For debugging

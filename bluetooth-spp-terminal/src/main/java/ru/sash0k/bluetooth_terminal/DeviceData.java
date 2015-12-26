@@ -1,9 +1,9 @@
 package ru.sash0k.bluetooth_terminal;
 
-import java.util.ArrayList;
-
 import android.bluetooth.BluetoothDevice;
 import android.os.ParcelUuid;
+
+import java.util.ArrayList;
 
 import ru.sash0k.bluetooth_terminal.bluetooth.BluetoothUtils;
 
