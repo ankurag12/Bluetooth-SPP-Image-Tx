@@ -1,28 +1,5 @@
-Bluetooth-spp-terminal
-======================
-(based on Android Bluetooth chat sample)
-
-
-Features:
-=========
-
- * Search and connect to bluetooth devices in slave mode via RFCOMM;
- * Send commands to devices both ASCII and hex modes;
- * Share and clean log;
- * English/Russian i18n;
-
-
-License
-=======
-
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
+Modified the Bluetooth-SPP-Terminal app by Alexander (https://github.com/Sash0k/bluetooth-spp-terminal) .
+The original app sends/recevies strings over Bluetooth. 
+This modified version is used to transmit images to an Electronic Paper Display setup, the firmware for which is at https://github.com/ankurag12/Electronic-Paper-Display-Bluetooth
+It uses a customized protocol for breaking down image to chunks of data, so it is not a generic app to transmit images over Bluetooth.
+This was done because of the hardware limitation at the receiving end - It uses an MSP430 controller which cannot handle big files. 
